@@ -1,0 +1,5 @@
+dependencies:
+  idf: ">=5.1"
+  jpegdec:
+    version: "1.2.8"
+    git: https://github.com/bitbank2/JPEGDEC.git

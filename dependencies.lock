@@ -1,0 +1,16 @@
+dependencies:
+  idf:
+    component_hash: null
+    source:
+      type: idf
+    version: 5.1.0
+  jpegdec:
+    component_hash: 27cc43103944f6aaf5a05c580df368d10141cde2f7b1a35ce242cf19a65012ba
+    source:
+      git: https://github.com/bitbank2/JPEGDEC.git
+      path: .
+      type: git
+    version: 1bb8f16c426b0e66baae33d409286df924bdf594
+manifest_hash: d05db9c44845ccdcaec16cbabf01720f189dd3bc78e6897aaa4450556d34ef4f
+target: esp32s3
+version: 1.0.0
