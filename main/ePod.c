@@ -4,9 +4,14 @@
 #include <freertos/task.h>
 #include "jpeg.h"
 #include "timeProbe.h"
+#include "lcd.h"
+
+uint16_t frameBuffer[240 * 240];
 
 
 void app_main(void) {
+    init_lcd();
+
     uint8_t fps_count = 0;
     timeProbe_t fps;
     timeProbe_start(&fps);
@@ -17,9 +22,11 @@ void app_main(void) {
             timeProbe_start(&fps);
         }
         jpeg_decode();
-        while (1){
-            vTaskDelay(1);
-        }
+
+        esp_lcd_panel_draw_bitmap(lcd_panel_handle,0,0,240,240,frameBuffer);
+
+        vTaskDelay(pdMS_TO_TICKS(1));
+
     }
 
 
