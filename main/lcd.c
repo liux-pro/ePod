@@ -12,12 +12,14 @@ esp_lcd_panel_handle_t lcd_panel_handle = NULL;
 
 
 esp_err_t init_lcd() {
-    ESP_LOGI(LCD_LOG_TAG, "Turn off LCD backlight");
-    gpio_config_t bk_gpio_config = {
-            .mode = GPIO_MODE_OUTPUT,
-            .pin_bit_mask = 1ULL << ST7789_PIN_NUM_BK_LIGHT
-    };
-    ESP_ERROR_CHECK(gpio_config(&bk_gpio_config));
+    if (ST7789_PIN_NUM_BK_LIGHT > 0){
+        ESP_LOGI(LCD_LOG_TAG, "Turn off LCD backlight");
+        gpio_config_t bk_gpio_config = {
+                .mode = GPIO_MODE_OUTPUT,
+                .pin_bit_mask = 1ULL << ST7789_PIN_NUM_BK_LIGHT
+        };
+        ESP_ERROR_CHECK(gpio_config(&bk_gpio_config));
+    }
 
     ESP_LOGI(LCD_LOG_TAG, "Initialize SPI bus");
     spi_bus_config_t buscfg = {
@@ -67,8 +69,11 @@ esp_err_t init_lcd() {
     // user can flush pre-defined pattern to the screen before we turn on the screen or backlight
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(lcd_panel_handle, true));
 
-    ESP_LOGI(LCD_LOG_TAG, "Turn on LCD backlight");
-    gpio_set_level(ST7789_PIN_NUM_BK_LIGHT, ST7789_LCD_BK_LIGHT_ON_LEVEL);
+
+    if (ST7789_PIN_NUM_BK_LIGHT > 0){
+        ESP_LOGI(LCD_LOG_TAG, "Turn on LCD backlight");
+        gpio_set_level(ST7789_PIN_NUM_BK_LIGHT, ST7789_LCD_BK_LIGHT_ON_LEVEL);
+    }
     esp_lcd_panel_invert_color(lcd_panel_handle, true);
     esp_lcd_panel_swap_xy(lcd_panel_handle,true);
     esp_lcd_panel_mirror(lcd_panel_handle,true,false);
