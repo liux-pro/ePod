@@ -1,0 +1,1 @@
+ffmpeg -i input.mp4 -vf "crop=ih:ih,scale=240:240" -c:v mjpeg -q:v 5 -r 24 -ar 44100 -c:a  libmp3lame -q:a 2 -ac 1 output.avi

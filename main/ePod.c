@@ -2,6 +2,7 @@
 #include <esp_log.h>
 #include <freertos/freertos.h>
 #include <freertos/task.h>
+#include <freertos/queue.h>
 #include <string.h>
 #include "jpeg.h"
 #include "timeProbe.h"
@@ -9,7 +10,8 @@
 #include "sd.h"
 #include "taskMonitor.h"
 
-uint16_t frameBuffer[240 * 240];
+EXT_RAM_BSS_ATTR uint16_t frameBuffer[240 * 240];
+
 
 typedef uint32_t DWORD;
 typedef uint32_t LONG;
@@ -207,20 +209,58 @@ static inline void alignToWORD(FILE *file) {
 
 }
 
-
-
+QueueHandle_t jpegFreeQueue;
+QueueHandle_t jpegBusyQueue;
 
 TaskHandle_t handle_taskFlush;
-static uint8_t jpegBuffer[1024*50];
-static int size;
+EXT_RAM_BSS_ATTR uint16_t decodeBuffer[2][240 * 240];
+
+#define BUFFER_SIZE 24
+
+struct GenericBuffer {
+    int size;
+    uint8_t *data;
+} jpegBuffer[BUFFER_SIZE];
+
+EXT_RAM_BSS_ATTR uint8_t jpegBufferData[BUFFER_SIZE][1024 * 24];
+
 
 void taskFlush(void *parm) {
 
+
+    uint8_t fps_count = 0;
+    timeProbe_t fps;
+    timeProbe_start(&fps);
+    int64_t lastFrameTime = 0;
+
+
+    struct GenericBuffer buffer;
     while (1) {
-        ESP_LOGI("LCD", "LCD");
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        jpeg_decode(jpegBuffer,size);
+        xQueueReceive(jpegBusyQueue, &buffer, portMAX_DELAY);
+        jpeg_decode(buffer.data, buffer.size);
+        xQueueSend(jpegFreeQueue, &buffer, portMAX_DELAY);
+
         esp_lcd_panel_draw_bitmap(lcd_panel_handle, 0, 0, LCD_WIDTH, LCD_HEIGHT, frameBuffer);
+        {
+            fps_count++;
+            if (fps_count == 0) {
+                ESP_LOGI("fps", "fps: %f", 256.0f * 1000.0f / (timeProbe_stop(&fps) / 1000.0));
+                timeProbe_start(&fps);
+            }
+        }
+
+        {
+            {//限制fps
+                int64_t current = esp_timer_get_time();
+                int64_t shouldFlushTime = lastFrameTime + (1000 * 1000 / 24);
+                if (shouldFlushTime > current) {
+                    vTaskDelay(pdMS_TO_TICKS((shouldFlushTime - current) >> 10));
+                    lastFrameTime = shouldFlushTime;
+                } else {
+                    lastFrameTime = current;
+                }
+            }
+        }
 
     }
 
@@ -228,13 +268,22 @@ void taskFlush(void *parm) {
 
 
 void app_main(void) {
+    jpegFreeQueue = xQueueCreate(BUFFER_SIZE, sizeof(struct GenericBuffer));
+    jpegBusyQueue = xQueueCreate(BUFFER_SIZE, sizeof(struct GenericBuffer));
+    {
+        for (int i = 0; i < BUFFER_SIZE; ++i) {
+            jpegBuffer[i].data = jpegBufferData[i];
+            xQueueSend(jpegFreeQueue, &jpegBuffer[i], portMAX_DELAY);
+        }
+    }
+
     xTaskCreatePinnedToCore(taskFlush, "taskFlush", 4 * 1024, NULL, 5, &handle_taskFlush, 1);
 
     startTaskMonitor(10000);
     init_sd();
     init_lcd();
 
-    FILE *file = fopen("/sdcard/video.avi", "rb");
+    FILE *file = fopen("/sdcard/ironman.avi", "rb");
     struct AVIFile avi;
     long nextListPos;
     fread(&avi, offsetof(struct AVIFile, HeaderList), 1, file);
@@ -315,25 +364,19 @@ void app_main(void) {
     do {
         struct Chunk chunk;
         fread(&chunk, 8, 1, file);
-//        printf("%c %c %c %c\n", chunk.ckID[0], chunk.ckID[1], chunk.ckID[2], chunk.ckID[3]);
-//        printf("%ld\n", ftell(file));
+
         if (memcmp(chunk.ckID, "00dc", 4) == 0) {
-            static int dc =0;
-//            printf("%d dc\n",dc++);
-//            fseek(file, chunk.ckSize, SEEK_CUR);
-            fread(jpegBuffer, chunk.ckSize,1,file);
-            size=chunk.ckSize;
-
-
-            xTaskNotifyGive(handle_taskFlush);
-
-
-        } else if(memcmp(chunk.ckID, "01wb", 4) == 0) {
-            static int wb =0;
+            struct GenericBuffer buffer;
+            xQueueReceive(jpegFreeQueue, &buffer, portMAX_DELAY);
+            buffer.size = chunk.ckSize;
+            fread(buffer.data, chunk.ckSize, 1, file);
+            xQueueSend(jpegBusyQueue, &buffer, portMAX_DELAY);
+        } else if (memcmp(chunk.ckID, "01wb", 4) == 0) {
+            static int wb = 0;
 //            printf("                                           %d wb\n",wb++);
             fseek(file, chunk.ckSize, SEEK_CUR);
-        }
-        else {
+
+        } else {
             fseek(file, chunk.ckSize, SEEK_CUR);
         }
         alignToWORD(file);
